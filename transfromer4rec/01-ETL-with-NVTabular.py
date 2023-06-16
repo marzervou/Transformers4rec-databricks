@@ -20,17 +20,9 @@
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC <img src="https://developer.download.nvidia.com/notebooks/dlsw-notebooks/merlin_transformers4rec_end-to-end-session-based-01-etl-with-nvtabular/nvidia_logo.png" style="width: 90px; float: right;">
-# MAGIC
 # MAGIC # ETL with NVTabular
 # MAGIC
-# MAGIC This notebook is created using the latest stable [merlin-pytorch](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/merlin/containers/merlin-pytorch) container.
-# MAGIC
 # MAGIC **Start a GPU CLuster and run the below magic commmand**
-# MAGIC ```
-# MAGIC %pip install -r requirements.txt --extra-index-url=https://pypi.nvidia.com
-# MAGIC ```
-# MAGIC This script will mount your local data folder that includes your data files to `/workspace/data` directory in the merlin-pytorch docker container.
 
 # COMMAND ----------
 
@@ -56,30 +48,7 @@ dbutils.library.restartPython()
 # MAGIC %md
 # MAGIC This notebook demonstrates how to use NVTabular to perform the feature engineering that is needed to model the `YOOCHOOSE` dataset which contains a collection of sessions from a retailer. Each session  encapsulates the click events that the user performed in that session.
 # MAGIC
-# MAGIC The dataset is available on [Kaggle](https://www.kaggle.com/chadgostopp/recsys-challenge-2015). You need to download it and copy to the `DATA_FOLDER` path. Note that we are only using the `yoochoose-clicks.dat` file.
-# MAGIC
 # MAGIC First, let's start by importing several libraries:
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC #### Define Data Input and Output Paths
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ```
-# MAGIC %sh 
-# MAGIC pip install kaggle
-# MAGIC export KAGGLE_USERNAME=puneetjain159
-# MAGIC export KAGGLE_KEY=dfac4e000065134f65640b201645dab9
-# MAGIC kaggle datasets download -d chadgostopp/recsys-challenge-2015 -p /dbfs/merlin/data/
-# MAGIC cd /dbfs/merlin/data/ &&  unzip /dbfs/merlin/data/recsys-challenge-2015.zip 
-# MAGIC ```
-
-# COMMAND ----------
-
-
 
 # COMMAND ----------
 
@@ -87,7 +56,6 @@ import os
 import glob
 import numpy as np
 import gc
-
 import cudf
 import cupy
 import nvtabular as nvt
@@ -96,14 +64,17 @@ from merlin.schema import Schema, Tags
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC #### Define Data Input and Output Paths
+
+# COMMAND ----------
+
 import os 
 
-DATA_FOLDER = "/dbfs/merlin/data/"
-FILENAME_PATTERN = 'yoochoose-clicks.dat'
-DATA_PATH = os.path.join(DATA_FOLDER, FILENAME_PATTERN)
-OUTPUT_PATH = "/local_disk0/merlin/data/"
+RAW_FOLDER = "/dbfs/merlin/data/raw" #where the raw data is stored
+OUTPUT_PATH = "/local_disk0/merlin/data/" #where we will store the preprocessed data
 OUTPUT_FOLDER  = os.path.join(OUTPUT_PATH,"output/")
-OVERWRITE = False
+OVERWRITE = True
 
 # COMMAND ----------
 
@@ -112,9 +83,11 @@ OVERWRITE = False
 
 # COMMAND ----------
 
-interactions_df = cudf.read_csv(DATA_PATH, sep=',', 
-                                names=['session_id','timestamp', 'item_id', 'category'], 
-                                dtype=['int', 'datetime64[s]', 'int', 'int'])
+interactions_df = cudf.read_parquet(RAW_FOLDER)
+
+# COMMAND ----------
+
+interactions_df.head()
 
 # COMMAND ----------
 
@@ -124,12 +97,16 @@ interactions_df = cudf.read_csv(DATA_PATH, sep=',',
 # COMMAND ----------
 
 print("Count with in-session repeated interactions: {}".format(len(interactions_df)))
+
 # Sorts the dataframe by session and timestamp, to remove consecutive repetitions
 interactions_df.timestamp = interactions_df.timestamp.astype(int)
 interactions_df = interactions_df.sort_values(['session_id', 'timestamp'])
 past_ids = interactions_df['item_id'].shift(1).fillna()
 session_past_ids = interactions_df['session_id'].shift(1).fillna()
-# Keeping only no consecutive repeated in session interactions
+
+# COMMAND ----------
+
+# Keeping only in session interactions that are not repeated
 interactions_df = interactions_df[~((interactions_df['session_id'] == session_past_ids) & (interactions_df['item_id'] == past_ids))]
 print("Count after removed in-session repeated interactions: {}".format(len(interactions_df)))
 
@@ -181,6 +158,7 @@ gc.collect()
 # MAGIC NVTabular supports different feature engineering transformations required by deep learning (DL) models such as Categorical encoding and numerical feature normalization. It also supports feature engineering and generating sequential features. 
 # MAGIC
 # MAGIC More information about the supported features can be found <a href="https://nvidia-merlin.github.io/NVTabular/main/index.html> here. </a">
+# MAGIC
 
 # COMMAND ----------
 
@@ -195,8 +173,6 @@ gc.collect()
 # MAGIC - 1. Encoding categorical variables using `Categorify()` op. We set `start_index` to 1 so that encoded null values start from `1` instead of `0` because we reserve `0` for padding the sequence features.
 # MAGIC - 2. Deriving temporal features from timestamp and computing their cyclical representation using a custom lambda function. 
 # MAGIC - 3. Computing the item recency in days using a custom op. Note that item recency is defined as the difference between the first occurrence of the item in dataset and the actual date of item interaction. 
-# MAGIC
-# MAGIC For more ETL workflow examples, visit NVTabular [example notebooks](https://github.com/NVIDIA-Merlin/NVTabular/tree/main/examples).
 
 # COMMAND ----------
 
@@ -425,7 +401,3 @@ gc.collect()
 
 # MAGIC %md
 # MAGIC That's it! We created our sequential features, now we can go to the next notebook to train a PyTorch session-based model.
-
-# COMMAND ----------
-
-
