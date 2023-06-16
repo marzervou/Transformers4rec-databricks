@@ -177,13 +177,31 @@ recsys_trainer = tr.Trainer(
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC In this demo, we will use the `fit_and_evaluate` method that allows us to conduct a time-based finetuning by iteratively training and evaluating using a sliding time window: At each iteration, we use the training data of a specific time index $t$ to train the model; then we evaluate on the validation data of the next index $t + 1$. Particularly, we set start time to 178 and end time to 180.
+# MAGIC In this demo, we will use the `fit_and_evaluate` method that allows us to conduct a time-based finetuning by iteratively training and evaluating using a sliding time window: At each iteration, we use the training data of a specific time index $t$ to train the model; then we evaluate on the validation data of the next index $t + 1$. Particularly, we set start time to 59 and end time to 62.
+# MAGIC
+# MAGIC This is the point where we will also leverage mlfloe, for autologging the different parameters of the pytorch model
 
 # COMMAND ----------
 
 from transformers4rec.torch.utils.examples_utils import fit_and_evaluate
 import os
-OT_results = fit_and_evaluate(recsys_trainer, start_time_index=59, end_time_index=62, input_dir="/local_disk0/merlin/data/output/preproc_sessions_by_day")
+import mlflow
+
+INPUT_FOLDER = "/dbfs/merlin/data/processed/preproc_sessions_by_day" #where we will store the preprocessed data
+
+# Train the model
+with mlflow.start_run() as run:
+    
+    # Auto log all MLflow entities
+    mlflow.pytorch.autolog()
+    
+    OT_results = fit_and_evaluate(recsys_trainer, start_time_index=10, end_time_index=12, input_dir=INPUT_FOLDER)
+
+
+# COMMAND ----------
+
+# fetch the auto logged parameters and metrics
+mlflow.get_run(run_id=run.info.run_id)
 
 # COMMAND ----------
 
@@ -210,7 +228,8 @@ for key in sorted(avg_results.keys()):
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC #### Save the model
+# MAGIC #### Log to Model Registry
+# MAGIC Log your model to the centralized model store that provides a UI and set of APIs to manage the full lifecycle of MLflow Models
 
 # COMMAND ----------
 
@@ -229,5 +248,7 @@ recsys_trainer._save_model_and_checkpoint(save_model_class=True)
 # MAGIC - Merlin NVTabular: https://github.com/NVIDIA-Merlin/NVTabular/tree/main/nvtabular
 # MAGIC
 # MAGIC - Merlin Dataloader: https://github.com/NVIDIA-Merlin/dataloader
-# MAGIC
-# MAGIC - Triton inference server: https://github.com/triton-inference-server
+
+# COMMAND ----------
+
+

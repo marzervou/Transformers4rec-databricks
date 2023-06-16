@@ -72,8 +72,7 @@ from merlin.schema import Schema, Tags
 import os 
 
 RAW_FOLDER = "/dbfs/merlin/data/raw" #where the raw data is stored
-OUTPUT_PATH = "/local_disk0/merlin/data/" #where we will store the preprocessed data
-OUTPUT_FOLDER  = os.path.join(OUTPUT_PATH,"output/")
+OUTPUT_FOLDER = "/dbfs/merlin/data/processed" #where we will store the preprocessed data
 OVERWRITE = True
 
 # COMMAND ----------
@@ -112,6 +111,10 @@ print("Count after removed in-session repeated interactions: {}".format(len(inte
 
 # COMMAND ----------
 
+interactions_df.head()
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC #### Create new feature with the timestamp when the item was first seen
 
@@ -119,6 +122,7 @@ print("Count after removed in-session repeated interactions: {}".format(len(inte
 
 items_first_ts_df = interactions_df.groupby('item_id').agg({'timestamp': 'min'}).reset_index().rename(columns={'timestamp': 'itemid_ts_first'})
 interactions_merged_df = interactions_df.merge(items_first_ts_df, on=['item_id'], how='left')
+interactions_df.timestamp = interactions_df.timestamp.astype(int)
 interactions_merged_df.head()
 
 # COMMAND ----------
@@ -134,10 +138,6 @@ interactions_merged_df.head()
 # COMMAND ----------
 
 interactions_merged_df.to_parquet(os.path.join(OUTPUT_FOLDER, 'interactions_merged_df/'),index = False,engine="pyarrow",row_group_size_bytes=67108864/4)
-
-# COMMAND ----------
-
-os.path.join(OUTPUT_FOLDER, 'interactions_merged_df.parquet')
 
 # COMMAND ----------
 
@@ -354,11 +354,11 @@ workflow.save(os.path.join(OUTPUT_FOLDER,"workflow_etl"))
 
 # COMMAND ----------
 
-sessions_gdf = sessions_gdf[sessions_gdf.day_index>=59]
+sessions_gdf = sessions_gdf[sessions_gdf.day_index<=5]
 
 # COMMAND ----------
 
-sessions_gdf.head()
+sessions_gdf.groupby("day_index").count()
 
 # COMMAND ----------
 
@@ -366,9 +366,10 @@ from utils.date_utils import save_time_based_splits
 
 # COMMAND ----------
 
-# from utils.data_utils import save_time_based_splits
+OUTPUT_FOLDER = "dbfs:/merlin/data/processed/"
+
 save_time_based_splits(data=nvt.Dataset(sessions_gdf),
-                       output_dir= os.path.join(OUTPUT_FOLDER,"preproc_sessions_by_day"),
+                       output_dir= os.path.join(OUTPUT_FOLDER,"preproc_sessions_by_day/"),
                        partition_col='day_index',
                        timestamp_col='session_id', 
                       )
@@ -401,3 +402,7 @@ gc.collect()
 
 # MAGIC %md
 # MAGIC That's it! We created our sequential features, now we can go to the next notebook to train a PyTorch session-based model.
+
+# COMMAND ----------
+
+

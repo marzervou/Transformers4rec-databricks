@@ -52,6 +52,15 @@ df.display()
 
 # COMMAND ----------
 
+from pyspark.sql.functions import unix_timestamp
+df.select().alias('unix_time')).collect()
+
+# COMMAND ----------
+
+df = df.withColumn("timestamp", unix_timestamp('timestamp', 'yyyy-MM-dd'))
+
+# COMMAND ----------
+
 dbutils.data.summarize(df)
 
 # COMMAND ----------
@@ -64,6 +73,10 @@ RAW_FOLDER = "dbfs:/merlin/data/raw" #where the raw data is stored
 
 # writing the file into output location - Default format Delta
 df.write.mode("overwrite").save(RAW_FOLDER)
+
+# COMMAND ----------
+
+#dbutils.fs.rm('dbfs:/merlin/data/raw',recurse=True)
 
 # COMMAND ----------
 
