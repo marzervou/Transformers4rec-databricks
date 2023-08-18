@@ -6,13 +6,14 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install cudf-cu11 dask-cudf-cu11 --extra-index-url=https://pypi.nvidia.com
-# MAGIC %pip install cuml-cu11 --extra-index-url=https://pypi.nvidia.com
-# MAGIC %pip install cugraph-cu11 --extra-index-url=https://pypi.nvidia.com
+# MAGIC %pip install --extra-index-url https://pypi.nvidia.com dask-cudf-cu11
+# MAGIC %pip install --extra-index-url https://pypi.nvidia.com cuml-cu11
+# MAGIC %pip install --extra-index-url https://pypi.nvidia.com cugraph-cu11
 
 # COMMAND ----------
 
 # MAGIC %pip install -r ../requirements.txt
+# MAGIC %pip install mlflow==2.3
 
 # COMMAND ----------
 
@@ -171,6 +172,10 @@ recsys_trainer = tr.Trainer(
 
 # COMMAND ----------
 
+recsys_trainer.model
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC #### Launch daily training and evaluation
 
@@ -187,21 +192,16 @@ from transformers4rec.torch.utils.examples_utils import fit_and_evaluate
 import os
 import mlflow
 
-INPUT_FOLDER = "/dbfs/merlin/data/processed/preproc_sessions_by_day" #where we will store the preprocessed data
+INPUT_FOLDER = "dbfs:/merlin/data/processed/preproc_sessions_by_day" #where we have stored the preprocessed data
+
 
 # Train the model
 with mlflow.start_run() as run:
-    
-    # Auto log all MLflow entities
-    mlflow.pytorch.autolog()
-    
-    OT_results = fit_and_evaluate(recsys_trainer, start_time_index=10, end_time_index=12, input_dir=INPUT_FOLDER)
+  mlflow.pytorch.autolog()
+  OT_results = fit_and_evaluate(recsys_trainer, start_time_index=1, end_time_index=2, input_dir=INPUT_FOLDER)
+  mlflow.pytorch.log_model(recsys_trainer.model, "mz-tran4rec")
 
 
-# COMMAND ----------
-
-# fetch the auto logged parameters and metrics
-mlflow.get_run(run_id=run.info.run_id)
 
 # COMMAND ----------
 
@@ -233,7 +233,65 @@ for key in sorted(avg_results.keys()):
 
 # COMMAND ----------
 
+
+# Fetch the logged model artifacts
+run_id = run.info.run_id
+print("run_id: {}".format(run.info.run_id))
+
+# Log model to registry
+model_name = "mz-tran4rec"
+model_version = mlflow.register_model(f"runs:/{run_id}/{model_name}", model_name)
+
+# COMMAND ----------
+
 recsys_trainer._save_model_and_checkpoint(save_model_class=True)
+
+# COMMAND ----------
+
+#PREDICT 
+
+# COMMAND ----------
+
+import transformers4rec
+train_loader = transformers4rec.torch.utils.data_utils.MerlinDataLoader.from_schema(
+        schema,
+        paths_or_dataset="/Workspace/Repos/maria.zervou@databricks.com/Transformers4rec-databricks/transfromer4rec/dbfs:/merlin/data/processed/preproc_sessions_by_day/3",
+        batch_size=10000,
+        drop_last=False,
+        shuffle=False,
+        max_sequence_length=100
+    )
+
+# COMMAND ----------
+
+batch=next(iter(train_loader))
+
+#Score model on this batch
+response=recsys_trainer.model(batch[0], training=False)
+
+# COMMAND ----------
+
+response
+
+# COMMAND ----------
+
+import os
+
+data_to_predict = "/FileStore/mzervou/test.parquet"
+df= spark.read.parquet(data_to_predict)
+
+
+# COMMAND ----------
+
+import mlflow
+from pyspark.sql.functions import struct, col
+logged_model = 'runs:/8ac9875a26ef4e26bd6e7286f1e7f72e/mz-tran4rec'
+
+# Load model as a Spark UDF. Override result_type if the model does not return double values.
+loaded_model = mlflow.pyfunc.spark_udf(spark, model_uri=logged_model, result_type='double')
+
+# Predict on a Spark DataFrame.
+df.withColumn('predictions', loaded_model(struct(*map(col, df.columns)))).show()
 
 # COMMAND ----------
 
